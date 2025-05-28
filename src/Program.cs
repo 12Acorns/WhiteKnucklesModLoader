@@ -2,6 +2,13 @@
 using System.Diagnostics.CodeAnalysis;
 using WhiteKnucklesModLoader.Extensions;
 
+// TODO: Save only new and changed files between vanilla and modded profiles
+// Everything is implemented but hash of each file is identical
+// Therefore byte content is identical
+// Therefore the files would be identical
+// But they are not as when loading (for reference this is the animal paw mod) the mod the game has the paw sprites instead
+// Idk how to check for this :\
+
 const string CREDITS = 
 "This tool takes inspiration from Bepswitch, created by proudunicorn. " +
 "Find at: \x1b[4m\x1b[36mhttps://www.nexusmods.com/valheim/mods/1281\x1b[0m";
@@ -49,6 +56,8 @@ Select what you wish to do:
 4) Load Profile
 5) Exit
 """;
+
+Console.Title = "White Knuckles Mod Loader";
 
 ConsoleStateManager.Initialize();
 
@@ -118,14 +127,18 @@ switch(option[0])
 			goto case '3';
 		}
 		var profileRoot = Directory.CreateDirectory(Path.Combine(modCacheRoot.FullName, profileName));
+		var profileDataRoot = profileRoot.CreateSubdirectory(WKDATADIRNAME);
+		var vanillaDataRoot = new DirectoryInfo(Path.Combine(modCacheRoot.FullName, "Vanilla", WKDATADIRNAME));
 		CopyProfile(bepinExRoot, profileRoot);
-		CopyAll(wkDataDirRoot, profileRoot);
+		//var changedFiles = FileContentComparer.ChangedFiles(wkDataDirRoot, vanillaDataRoot);
+		//var createdFiles = FileContentComparer.NewFiles(wkDataDirRoot, vanillaDataRoot);
+		CopyAll(wkDataDirRoot, profileDataRoot);
 		Console.WriteLine("Profile Saved.\nPress any key to exit...");
 		Console.ReadKey();
 		break;
 	case '4':
-		var profiles = Directory.EnumerateDirectories(modCacheRoot.FullName).Select(x => new DirectoryInfo(x).Name);
-		var profileSelected = PromptAndInput($"Profiles available:\n{string.Join("\n-", profiles)}");
+		var profiles = Directory.EnumerateDirectories(modCacheRoot.FullName).Select(x => $"-{new DirectoryInfo(x).Name}");
+		var profileSelected = PromptAndInput($"Profiles available:\n{string.Join("\n", profiles)}");
 		var profilePath = Path.Combine(modCacheRoot.FullName, profileSelected);
 		if(!Directory.Exists(profilePath))
 		{
@@ -133,8 +146,9 @@ switch(option[0])
 			goto case '4';
 		}
 		profileRoot = new DirectoryInfo(profilePath);
+		var dataRoot = profileRoot.CreateSubdirectory(WKDATADIRNAME);
 		CopyProfile(profileRoot, bepinExRoot);
-		CopyAll(profileRoot, wkDataDirRoot);
+		CopyAll(dataRoot, wkDataDirRoot);
 		Console.Write("Profile loaded succesfully. Press any key to exit...");
 		Console.Read();
 		break;
