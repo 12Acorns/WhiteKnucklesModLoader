@@ -1,3 +1,4 @@
+[![.NET](https://github.com/12Acorns/WhiteKnucklesModLoader/actions/workflows/dotnet.yml/badge.svg)](https://github.com/12Acorns/WhiteKnucklesModLoader/actions/workflows/dotnet.yml)
 # White Knuckles Mod Loader (WKML)
 WKML is a simple to use command line tool to make switching between different mod configurations easy.
 
