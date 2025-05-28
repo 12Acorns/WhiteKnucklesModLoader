@@ -137,8 +137,17 @@ switch(option[0])
 		Console.ReadKey();
 		break;
 	case '4':
-		var profiles = Directory.EnumerateDirectories(modCacheRoot.FullName).Select(x => $"-{new DirectoryInfo(x).Name}");
-		var profileSelected = PromptAndInput($"Profiles available:\n{string.Join("\n", profiles)}");
+		var profiles = Directory.EnumerateDirectories(modCacheRoot.FullName).Select(x =>
+		{
+			var dirName = Path.GetFileName(Path.TrimEndingDirectorySeparator(x.AsSpan()));
+			return string.Create(dirName.Length + 2, dirName, (buffer, val) =>
+			{
+				buffer[0] = '\n';
+				buffer[1] = '-';
+				val.CopyTo(buffer[2..]);
+			});
+		});
+		var profileSelected = PromptAndInput($"Profiles available:{string.Concat<string>(profiles)}");
 		var profilePath = Path.Combine(modCacheRoot.FullName, profileSelected);
 		if(!Directory.Exists(profilePath))
 		{
@@ -221,18 +230,13 @@ void CopyProfile(DirectoryInfo bepinExRoot, DirectoryInfo toRoot)
 static void CopyAll(DirectoryInfo source, DirectoryInfo target)
 {
 	Directory.CreateDirectory(target.FullName);
-
-	// Copy each file into the new directory.
-	foreach(FileInfo fi in source.GetFiles())
+	foreach(var fi in source.EnumerateFiles())
 	{
 		fi.CopyTo(Path.Combine(target.FullName, fi.Name), true);
 	}
-
-	// Copy each subdirectory using recursion.
-	foreach(DirectoryInfo diSourceSubDir in source.GetDirectories())
+	foreach(var diSourceSubDir in source.EnumerateDirectories())
 	{
-		DirectoryInfo nextTargetSubDir =
-			target.CreateSubdirectory(diSourceSubDir.Name);
+		var nextTargetSubDir = target.CreateSubdirectory(diSourceSubDir.Name);
 		CopyAll(diSourceSubDir, nextTargetSubDir);
 	}
 }
