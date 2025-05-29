@@ -1,6 +1,7 @@
 ﻿
-using System.Diagnostics.CodeAnalysis;
+using static WhiteKnucklesModLoader.Utility.ConsoleUtility;
 using WhiteKnucklesModLoader.Extensions;
+using WhiteKnucklesModLoader.Utility;
 
 // TODO: Save only new and changed files between vanilla and modded profiles
 // Everything is implemented but hash of each file is identical
@@ -37,16 +38,8 @@ Use Load profile to load a profile you have saved.
 If you wish to revert your game to vanilla settings, use options 4 and type Vanilla to go back to a vanilla profile.
 FYI: Using option 1 will not revert asset changes. To go to a fully vanilla state please load the Vanilla profile.
 """;
-const string WKLOCATIONPROMPT = "White Knuckles Install Location:";
-const string ENABLEDTRUE = "enabled = true";
-const string ENABLEDFALSE = "enabled = false";
-const string DOORSTOPFILENAME = "doorstop_config.ini";
-const string BEPINEXCONFIGNAME = "config";
-const string BEPINEXPATCHERSNAME = "patchers";
-const string BEPINEXPLUGINSNAME = "plugins";
-const string BEPINEXDIRNAME = "BepInEx";
-const string WKDATADIRNAME = "White Knuckle_Data";
-const string MODCACHENAME = "WKModLoader_ModCache";
+
+const string VANILLAPROFILENAME = "Vanilla";
 const string OPTIONS =
 """
 Select what you wish to do:
@@ -66,56 +59,34 @@ Console.WriteLine(PREREQUISITES);
 Console.WriteLine(HELPDETAILS);
 Console.WriteLine();
 
-var localLowRoot = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData, Environment.SpecialFolderOption.Create);
-var wkModLoaderRoot = Path.Combine(localLowRoot, "WKModLoader");
-Directory.CreateDirectory(wkModLoaderRoot);
-var wkModLoaderDataPath = Path.Combine(wkModLoaderRoot, "loaderdata.txt");
-string whiteKnucklesPath;
-if(!File.Exists(wkModLoaderDataPath))
-{
-	whiteKnucklesPath = PromptAndInput(WKLOCATIONPROMPT);
-	File.WriteAllText(wkModLoaderDataPath, whiteKnucklesPath);
-}
-else
-{
-	whiteKnucklesPath = File.ReadAllText(wkModLoaderDataPath).Trim();
-	if(string.IsNullOrWhiteSpace(whiteKnucklesPath))
-	{
-		whiteKnucklesPath = PromptAndInput(WKLOCATIONPROMPT);
-		File.WriteAllText(wkModLoaderDataPath, whiteKnucklesPath);
-	}
-	else
-	{
-		Console.WriteLine($"Using saved White Knuckles install location: {whiteKnucklesPath}");
-	}
-}
-
-
-if(!Directory.Exists(whiteKnucklesPath))
+if(!Directory.Exists(PathManager.WKInstallLocation.FullName))
 {
 	Console.WriteLine("Directory does not exist. Exiting.");
 	return;
 }
-GetRequiredFolderLocations(whiteKnucklesPath, out var whiteKnucklesDirRoot, out var bepinExRoot, out var modCacheRoot, out var wkDataDirRoot);
-CreateVanillaProfileOrIgnore(bepinExRoot, wkDataDirRoot, modCacheRoot);
+if(PathManager.LegacyCacheExists)
+{
+	Console.WriteLine("Legacy mod cache found. Migration of profile will occour.\nPress enter to start...");
+	Console.ReadKey();
+	var legacyCache = PathManager.LegacyCacheLocation;
+	foreach(var profile in legacyCache.EnumerateDirectories())
+	{
+		PathManager.MigrateProfile(profile.Name);
+	}
+	legacyCache.Delete(true);
+}
 
+var vanillaProfile = CreateVanillaProfileOrIgnore();
 var option = PromptAndInput(OPTIONS);
-
 switch(option[0])
 {
 	case '1':
-		var path = Path.Combine(whiteKnucklesDirRoot.FullName, DOORSTOPFILENAME);
-		var content = File.ReadAllText(path);
-		content = content.Replace(ENABLEDTRUE, ENABLEDFALSE);
-		File.WriteAllText(path, content);
+		PathManager.SetDoorStopState(false);
 		Console.Write("Vanilla mode enabled. Press any key to exit...");
 		Console.ReadKey();
 		break;
 	case '2':
-		path = Path.Combine(whiteKnucklesDirRoot.FullName, DOORSTOPFILENAME);
-		content = File.ReadAllText(path);
-		content = content.Replace(ENABLEDFALSE, ENABLEDTRUE);
-		File.WriteAllText(path, content);
+		PathManager.SetDoorStopState(true);
 		Console.Write("Modded mode enabled. Press any key to exit...");
 		Console.ReadKey();
 		break;
@@ -126,18 +97,34 @@ switch(option[0])
 			Console.WriteLine("Cannot save profile with name 'Vanilla'. Please choose a different name.");
 			goto case '3';
 		}
-		var profileRoot = Directory.CreateDirectory(Path.Combine(modCacheRoot.FullName, profileName));
-		var profileDataRoot = profileRoot.CreateSubdirectory(WKDATADIRNAME);
-		var vanillaDataRoot = new DirectoryInfo(Path.Combine(modCacheRoot.FullName, "Vanilla", WKDATADIRNAME));
-		CopyProfile(bepinExRoot, profileRoot);
-		//var changedFiles = FileContentComparer.ChangedFiles(wkDataDirRoot, vanillaDataRoot);
-		//var createdFiles = FileContentComparer.NewFiles(wkDataDirRoot, vanillaDataRoot);
-		CopyAll(wkDataDirRoot, profileDataRoot);
+		if(Profile.Exists(profileName))
+		{
+			Console.Write($"Are you sure you want to overwrite the data for '{profileName}'? Y/N\n>");
+			var key = Console.ReadKey().Key;
+			if(key is ConsoleKey.Y)
+			{
+				Console.WriteLine("Overwriting profile");
+			}
+			else if(key is ConsoleKey.N)
+			{
+				goto case '3';
+			}
+			else
+			{
+				Console.WriteLine("Unrecognized input. Defaulting to N");
+				goto case '3';
+			}
+		}
+		Console.WriteLine("Saving profile, this may take a while and the console may freeze. This is expected behaviour.");
+		var profile = new Profile(profileName);
+		profile.ClearProfileData();
+		profile.SaveBepinExDataToProfile();
+		profile.SaveDataIntoProfile(PathManager.WKDataLocation);
 		Console.WriteLine("Profile Saved.\nPress any key to exit...");
 		Console.ReadKey();
 		break;
 	case '4':
-		var profiles = Directory.EnumerateDirectories(modCacheRoot.FullName).Select(x =>
+		var profiles = Directory.EnumerateDirectories(PathManager.ProfileRoot.FullName).Select(x =>
 		{
 			var dirName = Path.GetFileName(Path.TrimEndingDirectorySeparator(x.AsSpan()));
 			return string.Create(dirName.Length + 2, dirName, (buffer, val) =>
@@ -148,16 +135,15 @@ switch(option[0])
 			});
 		});
 		var profileSelected = PromptAndInput($"Profiles available:{string.Concat<string>(profiles)}");
-		var profilePath = Path.Combine(modCacheRoot.FullName, profileSelected);
-		if(!Directory.Exists(profilePath))
+		if(!Profile.Exists(profileSelected))
 		{
 			Console.WriteLine("Profile does not exist. Enter a valid profile.");
 			goto case '4';
 		}
-		profileRoot = new DirectoryInfo(profilePath);
-		var dataRoot = profileRoot.CreateSubdirectory(WKDATADIRNAME);
-		CopyProfile(profileRoot, bepinExRoot);
-		CopyAll(dataRoot, wkDataDirRoot);
+		Console.WriteLine("Loading profile, this may take a while and the console may freeze. This is expected behaviour.");
+		profile = new Profile(profileSelected);
+		profile.LoadProfileBepinExDataToBepinExFolder();
+		profile.LoadProfileWKDataToWKDataFolder();
 		Console.Write("Profile loaded succesfully. Press any key to exit...");
 		Console.Read();
 		break;
@@ -166,77 +152,14 @@ switch(option[0])
 		break;
 }
 
-static string PromptAndInput(string prompt)
+static Profile CreateVanillaProfileOrIgnore()
 {
-	Console.WriteLine('\n');
-	var badInputIndicatorLocation = Console.CursorTop - 1;
-	Console.Write(prompt + "\n>");
-	var cursorTop = Console.CursorTop;
-	var input = Console.ReadLine();
-	while(string.IsNullOrWhiteSpace(input))
+	var vanillaProfile = new Profile(VANILLAPROFILENAME);
+	if(PathManager.ProfileRoot.EnumerateDirectories().Any(x => x.Name is VANILLAPROFILENAME))
 	{
-		Console.SetCursorPosition(0, badInputIndicatorLocation);
-		Console.Write("Invalid input. Try again.");
-		Console.SetCursorPosition(0, cursorTop);
-		Console.Write(new string(' ', Console.WindowWidth));
-		Console.SetCursorPosition(0, cursorTop);
-		Console.Write('>');
-		input = Console.ReadLine();
+		return vanillaProfile;
 	}
-	return input;
-}
-void GetRequiredFolderLocations(string whiteKnucklesPath,
-	[NotNull] out DirectoryInfo wkDirRoot, 
-	[NotNull] out DirectoryInfo? bepinExRoot,
-	[NotNull] out DirectoryInfo modCacheRoot,
-	[NotNull] out DirectoryInfo wkDataDirRoot)
-{
-	wkDirRoot = new DirectoryInfo(whiteKnucklesPath);
-	bepinExRoot = wkDirRoot.EnumerateDirectories().FirstOrDefault(x => x.Name is BEPINEXDIRNAME);
-	if(bepinExRoot is null)
-	{
-		Console.WriteLine($"BepInEx directory not found in {whiteKnucklesPath}. Exiting.");
-		Console.Read();
-		Environment.Exit(1);
-	}
-	modCacheRoot = Directory.CreateDirectory(Path.Combine(whiteKnucklesPath, MODCACHENAME));
-	wkDataDirRoot = new DirectoryInfo(Path.Combine(whiteKnucklesPath, WKDATADIRNAME));
-}
-static void GetOrCreateBepinExFolders(DirectoryInfo bepinExRoot, out DirectoryInfo pluginsRoot, out DirectoryInfo patchersRoot, out DirectoryInfo configRoot)
-{
-	pluginsRoot = bepinExRoot.CreateSubdirectory(BEPINEXPLUGINSNAME);
-	patchersRoot = bepinExRoot.CreateSubdirectory(BEPINEXPATCHERSNAME);
-	configRoot = bepinExRoot.CreateSubdirectory(BEPINEXCONFIGNAME);
-}
-void CreateVanillaProfileOrIgnore(DirectoryInfo bepinExRoot, DirectoryInfo wkDataDirRoot, DirectoryInfo modCacheRoot)
-{
-	if(modCacheRoot.EnumerateDirectories().Any(x => x.Name is "Vanilla"))
-	{
-		return;
-	}
-	var vanillaProfile = modCacheRoot.CreateSubdirectory("Vanilla");
-	var vanillaData = Directory.CreateDirectory(Path.Combine(vanillaProfile.FullName, WKDATADIRNAME));
-	CopyAll(wkDataDirRoot, vanillaData);
-	CopyProfile(bepinExRoot, vanillaProfile);
-}
-void CopyProfile(DirectoryInfo bepinExRoot, DirectoryInfo toRoot)
-{
-	GetOrCreateBepinExFolders(bepinExRoot, out var pluginsRoot, out var patchersRoot, out var configRoot);
-	GetOrCreateBepinExFolders(toRoot, out var toPluginsRoot, out var toPatchersRoot, out var toConfigRoot);
-	CopyAll(pluginsRoot, toPluginsRoot);
-	CopyAll(patchersRoot, toPatchersRoot);
-	CopyAll(configRoot, toConfigRoot);
-}
-static void CopyAll(DirectoryInfo source, DirectoryInfo target)
-{
-	Directory.CreateDirectory(target.FullName);
-	foreach(var fi in source.EnumerateFiles())
-	{
-		fi.CopyTo(Path.Combine(target.FullName, fi.Name), true);
-	}
-	foreach(var diSourceSubDir in source.EnumerateDirectories())
-	{
-		var nextTargetSubDir = target.CreateSubdirectory(diSourceSubDir.Name);
-		CopyAll(diSourceSubDir, nextTargetSubDir);
-	}
+	vanillaProfile.SaveDataIntoProfile(PathManager.WKDataLocation);
+	vanillaProfile.SaveBepinExDataToProfile();
+	return vanillaProfile;
 }
