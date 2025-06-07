@@ -1,5 +1,4 @@
-﻿using System.Runtime.CompilerServices;
-using WhiteKnucklesModLoader.Extensions;
+﻿using WhiteKnucklesModLoader.Extensions;
 using WhiteKnucklesModLoader.Utility;
 
 internal sealed record class Profile
@@ -16,13 +15,13 @@ internal sealed record class Profile
 
 	public DirectoryInfo ProfileLocation { get; }
 
-	public void SaveDataIntoProfile(DirectoryInfo data)
+	public async Task SaveDataIntoProfile(DirectoryInfo data)
 	{
 		if(data is null)
 		{
 			throw new ArgumentNullException(nameof(data), "Data directory cannot be null.");
 		}
-		PathManager.CopyAll(data, ProfileLocation.CreateSubdirectory(data.Name));
+		await PathManager.CopyAllAsync(data, ProfileLocation.CreateSubdirectory(data.Name)).ConfigureAwait(false);
 	}
 	public void ClearProfileData() => ProfileLocation.Empty();
 

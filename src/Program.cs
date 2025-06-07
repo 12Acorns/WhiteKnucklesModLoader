@@ -1,7 +1,12 @@
 ﻿
-using static WhiteKnucklesModLoader.Utility.ConsoleUtility;
+using System.ComponentModel.DataAnnotations;
+using System.Diagnostics.Metrics;
+using System.Runtime.CompilerServices;
+using System.Threading.Tasks;
 using WhiteKnucklesModLoader.Extensions;
 using WhiteKnucklesModLoader.Utility;
+using ZLinq;
+using static WhiteKnucklesModLoader.Utility.ConsoleUtility;
 
 // TODO: Save only new and changed files between vanilla and modded profiles
 // Everything is implemented but hash of each file is identical
@@ -47,7 +52,8 @@ Select what you wish to do:
 2) Start Modded
 3) Save Profile
 4) Load Profile
-5) Exit
+5) Delete Profile
+6) Exit
 """;
 
 Console.Title = "White Knuckles Mod Loader";
@@ -76,17 +82,17 @@ if(PathManager.LegacyCacheExists)
 	legacyCache.Delete(true);
 }
 
-var vanillaProfile = CreateVanillaProfileOrIgnore();
+var vanillaProfile = await CreateVanillaProfileOrIgnore().ConfigureAwait(false);
 var option = PromptAndInput(OPTIONS);
 switch(option[0])
 {
 	case '1':
-		PathManager.SetDoorStopState(false);
+		await PathManager.SetDoorStopStateAsync(false).ConfigureAwait(false);
 		Console.Write("Vanilla mode enabled. Press any key to exit...");
 		Console.ReadKey();
 		break;
 	case '2':
-		PathManager.SetDoorStopState(true);
+		await PathManager.SetDoorStopStateAsync(true).ConfigureAwait(false);
 		Console.Write("Modded mode enabled. Press any key to exit...");
 		Console.ReadKey();
 		break;
@@ -97,34 +103,60 @@ switch(option[0])
 			Console.WriteLine("Cannot save profile with name 'Vanilla'. Please choose a different name.");
 			goto case '3';
 		}
+		ConsoleKey key;
 		if(Profile.Exists(profileName))
 		{
 			Console.Write($"Are you sure you want to overwrite the data for '{profileName}'? Y/N\n>");
-			var key = Console.ReadKey().Key;
+			key = Console.ReadKey().Key;
 			if(key is ConsoleKey.Y)
 			{
-				Console.WriteLine("Overwriting profile");
+				Console.WriteLine("\nOverwriting profile");
 			}
 			else if(key is ConsoleKey.N)
 			{
+				Console.Write('\n');
 				goto case '3';
 			}
 			else
 			{
-				Console.WriteLine("Unrecognized input. Defaulting to N");
+				Console.Write("\nUnrecognized input. Defaulting to N");
 				goto case '3';
 			}
 		}
-		Console.WriteLine("Saving profile, this may take a while and the console may freeze. This is expected behaviour.");
+		Console.WriteLine("Saving profile, this may take a while.");
 		var profile = new Profile(profileName);
 		profile.ClearProfileData();
-		profile.SaveBepinExDataToProfile();
-		profile.SaveDataIntoProfile(PathManager.WKDataLocation);
-		Console.WriteLine("Profile Saved.\nPress any key to exit...");
+		var t1 = profile.SaveBepinExDataToProfile();
+		var t2 = profile.SaveDataIntoProfile(PathManager.WKDataLocation);
+		var savingProfileText = "Saving Profile";
+		var counter = 0;
+		Console.CursorVisible = false;
+		while(!t1.IsCompletedSuccessfully || !t2.IsCompletedSuccessfully)
+		{
+			Console.CursorLeft = 0;
+			Console.Write(string.Create(savingProfileText.Length + 3, savingProfileText, (buffer, state) =>
+			{
+				state.CopyTo(buffer);
+				buffer[state.Length] = '.';
+				(counter switch
+				{
+					0 => ".  ",
+					1 => ".. ",
+					2 => "...",
+					_ => throw new InvalidOperationException("Counter exceeded expected range.")
+				}).CopyTo(buffer[^3..]);
+			}));
+			counter++;
+			counter %= 3;
+			await Task.Delay(300);
+		}
+		Console.CursorVisible = true;
+		await Task.WhenAll(t1, t2).ConfigureAwait(false);
+		Console.WriteLine("\nProfile Saved.\nPress any key to exit...");
 		Console.ReadKey();
 		break;
 	case '4':
-		var profiles = Directory.EnumerateDirectories(PathManager.ProfileRoot.FullName).Select(x =>
+		var profiles = Directory.EnumerateDirectories(PathManager.ProfileRoot.FullName).AsValueEnumerable().Select(x =>
 		{
 			var dirName = Path.GetFileName(Path.TrimEndingDirectorySeparator(x.AsSpan()));
 			return string.Create(dirName.Length + 2, dirName, (buffer, val) =>
@@ -133,33 +165,92 @@ switch(option[0])
 				buffer[1] = '-';
 				val.CopyTo(buffer[2..]);
 			});
-		});
-		var profileSelected = PromptAndInput($"Profiles available:{string.Concat<string>(profiles)}");
+		}).JoinToString('\0');
+		var profileSelected = PromptAndInput($"Profiles available:{profiles}");
 		if(!Profile.Exists(profileSelected))
 		{
 			Console.WriteLine("Profile does not exist. Enter a valid profile.");
 			goto case '4';
 		}
-		Console.WriteLine("Loading profile, this may take a while and the console may freeze. This is expected behaviour.");
+		Console.WriteLine("Loading profile, this may take a while.");
 		profile = new Profile(profileSelected);
-		profile.LoadProfileBepinExDataToBepinExFolder();
-		profile.LoadProfileWKDataToWKDataFolder();
-		Console.Write("Profile loaded succesfully. Press any key to exit...");
+		t1 = profile.LoadProfileBepinExDataToBepinExFolder();
+		t2 = profile.LoadProfileWKDataToWKDataFolder();
+		counter = 0;
+		var loadingProfileText = "Loading Profile";
+		Console.CursorVisible = false;
+		while(!t1.IsCompletedSuccessfully || !t2.IsCompletedSuccessfully)
+		{
+			Console.CursorLeft = 0;
+			Console.Write(string.Create(loadingProfileText.Length + 3, loadingProfileText, (buffer, state) =>
+			{
+				state.CopyTo(buffer);
+				(counter switch
+				{
+					0 => ".  ",
+					1 => ".. ",
+					2 => "...",
+					_ => throw new InvalidOperationException("Counter exceeded expected range.")
+				}).CopyTo(buffer[^3..]);
+			}));
+			counter++;
+			counter %= 3;
+			await Task.Delay(300);
+		}
+		Console.CursorVisible = true;
+		await Task.WhenAll(t1, t2).ConfigureAwait(false);
+		Console.WriteLine("\nProfile loaded succesfully. Press any key to exit...");
 		Console.Read();
 		break;
 	case '5':
+		profiles = Directory.EnumerateDirectories(PathManager.ProfileRoot.FullName).AsValueEnumerable().Select(x =>
+		{
+			var dirName = Path.GetFileName(Path.TrimEndingDirectorySeparator(x.AsSpan()));
+			return string.Create(dirName.Length + 2, dirName, (buffer, val) =>
+			{
+				buffer[0] = '\n';
+				buffer[1] = '-';
+				val.CopyTo(buffer[2..]);
+			});
+		}).JoinToString('\0');
+		profileSelected = PromptAndInput($"Profiles available:{profiles}");
+		if(!Profile.Exists(profileSelected))
+		{
+			Console.WriteLine("Cannot delete profile as profile does not exist.");
+			goto case '5';
+		}
+		Console.Write($"Are you sure you want to delete profile '{profileSelected}'? Y/N\n>");
+		key = Console.ReadKey().Key;
+		if(key is ConsoleKey.Y)
+		{
+			Console.WriteLine("\nDeleting profile");
+		}
+		else if(key is ConsoleKey.N)
+		{
+			goto case '6';
+		}
+		else
+		{
+			Console.Write("\nUnrecognized input. Defaulting to N");
+			goto case '6';
+		}
+		Profile.DeleteProfile(new Profile(profileSelected));
+		Console.WriteLine("Profile Deleted");
+		break;
+	case '6':
 		Environment.Exit(0);
 		break;
 }
 
-static Profile CreateVanillaProfileOrIgnore()
+static async Task<Profile> CreateVanillaProfileOrIgnore()
 {
 	var vanillaProfile = new Profile(VANILLAPROFILENAME);
 	if(PathManager.ProfileRoot.EnumerateDirectories().Any(x => x.Name is VANILLAPROFILENAME))
 	{
 		return vanillaProfile;
 	}
-	vanillaProfile.SaveDataIntoProfile(PathManager.WKDataLocation);
-	vanillaProfile.SaveBepinExDataToProfile();
+	var t1 = vanillaProfile.SaveDataIntoProfile(PathManager.WKDataLocation);
+	var t2 = vanillaProfile.SaveBepinExDataToProfile();
+	await Task.WhenAll(t1, t2).ConfigureAwait(false);
 	return vanillaProfile;
 }

@@ -1,4 +1,7 @@
-﻿namespace WhiteKnucklesModLoader.Utility;
+﻿using WhiteKnucklesModLoader.Extensions;
+using ZLinq;
+
+namespace WhiteKnucklesModLoader.Utility;
 
 internal static class PathManager
 {
@@ -52,36 +55,39 @@ internal static class PathManager
 		patchersLocation = BepinExLocation.CreateSubdirectory("patchers");
 		pluginsLocation = BepinExLocation.CreateSubdirectory("plugins");
 	}
-	public static void SetDoorStopState(bool state)
+	public static async Task SetDoorStopStateAsync(bool state)
 	{
 		var doorStopPath = Path.Combine(WKInstallLocation.FullName, DOORSTOPFILENAME);
-		var content = File.ReadAllText(doorStopPath);
-		if(state)
-		{
-			content = content.Replace(ENABLEDFALSE, ENABLEDTRUE);
-		}
-		else
-		{
-			content = content.Replace(ENABLEDTRUE, ENABLEDFALSE);
-		}
-		File.WriteAllText(doorStopPath, content);
+		var contentTask = File.ReadAllTextAsync(doorStopPath).ConfigureAwait(false);
+		var (doorStopStateFrom, doorStopStateTo) = state ? (ENABLEDFALSE, ENABLEDTRUE) : (ENABLEDTRUE, ENABLEDFALSE);
+		var content = (await contentTask).Replace(doorStopStateFrom, doorStopStateTo);
+		await File.WriteAllTextAsync(doorStopPath, content).ConfigureAwait(false);
 	}
 	/// <summary>
 	/// Copies all files and directories from the source directory to the target directory recursively.
 	/// <para></para>
 	/// The source directory will spill its contents into target, so make sure to create a subdirectory in target if you want to keep the source directory structure.
 	/// </summary>
-	public static void CopyAll(DirectoryInfo source, DirectoryInfo target)
+	public static async Task CopyAllAsync(DirectoryInfo source, DirectoryInfo target)
 	{
+		if(source == null || target == null)
+		{
+			throw new ArgumentNullException(source == null ? nameof(source) : nameof(target));
+		}
+		if(Path.GetFullPath(source.FullName).AsSpan().TrimEnd(Path.DirectorySeparatorChar)
+			.CompareWith(Path.GetFullPath(target.FullName).AsSpan().TrimEnd(Path.DirectorySeparatorChar)))
+		{
+			throw new InvalidOperationException("Source and target directories cannot be the same.");
+		}
 		Directory.CreateDirectory(target.FullName);
 		foreach(var fi in source.EnumerateFiles())
 		{
-			fi.CopyTo(Path.Combine(target.FullName, fi.Name), true);
+			await fi.CopyToAsync(target, true).ConfigureAwait(false);
 		}
 		foreach(var diSourceSubDir in source.EnumerateDirectories())
 		{
 			var nextTargetSubDir = target.CreateSubdirectory(diSourceSubDir.Name);
-			CopyAll(diSourceSubDir, nextTargetSubDir);
+			await CopyAllAsync(diSourceSubDir, nextTargetSubDir).ConfigureAwait(false);
 		}
 	}
 	/// <summary>
@@ -89,11 +95,7 @@ internal static class PathManager
 	/// </summary>
 	public static void MigrateProfile(string profileName)
 	{
-		if(!LegacyCacheExists)
-		{
-			return;
-		}
-		if (string.IsNullOrWhiteSpace(profileName))
+		if(!LegacyCacheExists || string.IsNullOrWhiteSpace(profileName))
 		{
 			return;
 		}
@@ -113,23 +115,16 @@ internal static class PathManager
 	private static DirectoryInfo GetWKInstallLocation()
 	{
 		var wkInstallPathData = Path.Join(LocalDataLocation.FullName, WKINSTALLLDATA);
-		string whiteKnucklesPath;
-		if(File.Exists(wkInstallPathData))
+		string GetAndSavePath()
 		{
-			whiteKnucklesPath = File.ReadAllText(wkInstallPathData).Trim();
-			if(string.IsNullOrWhiteSpace(whiteKnucklesPath))
-			{
-				whiteKnucklesPath = ConsoleUtility.PromptAndInput("Please enter the path to your White Knuckles install location:").Trim();
-				File.WriteAllText(wkInstallPathData, whiteKnucklesPath);
-				Console.WriteLine($"Saved White Knuckles install location '{whiteKnucklesPath}' at '{wkInstallPathData}'");
-			}
+			var path = ConsoleUtility.PromptAndInput("Please enter the path to your White Knuckles install location:").Trim();
+			File.WriteAllText(wkInstallPathData, path);
+			Console.WriteLine($"Saved White Knuckles install location '{path}' at '{wkInstallPathData}'");
+			return path;
 		}
-		else
-		{
-			whiteKnucklesPath = ConsoleUtility.PromptAndInput("Please enter the path to your White Knuckles install location:").Trim();
-			File.WriteAllText(wkInstallPathData, whiteKnucklesPath);
-			Console.WriteLine($"Saved White Knuckles install location '{whiteKnucklesPath}' at '{wkInstallPathData}'");
-		}
+		var whiteKnucklesPath = File.Exists(wkInstallPathData)
+			? File.ReadAllText(wkInstallPathData).Trim()
+			: GetAndSavePath();
 		return new DirectoryInfo(whiteKnucklesPath);
 	}
 }

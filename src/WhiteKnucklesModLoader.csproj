@@ -6,6 +6,9 @@
     <Nullable>enable</Nullable>
     <InvariantGlobalization>true</InvariantGlobalization>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <ApplicationIcon>..\resources\MOD LOADER.ico</ApplicationIcon>
+    <ApplicationIcon>..\resources\MOD LOADER 256x256.ico</ApplicationIcon>
   </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="ZLinq" Version="1.4.10" />
+  </ItemGroup>
 </Project>

@@ -13,7 +13,7 @@ internal static class ProfileExtensions
 	private static readonly DirectoryInfo _bepinExPatchersLocation;
 	private static readonly DirectoryInfo _bepinExConfigLocation;
 
-	public static void LoadProfileWKDataToWKDataFolder(this Profile profile)
+	public static async Task LoadProfileWKDataToWKDataFolder(this Profile profile)
 	{
 		if(profile is null)
 		{
@@ -21,9 +21,9 @@ internal static class ProfileExtensions
 		}
 		var profileWKData = profile.ProfileLocation.CreateSubdirectory(PathManager.WKDATADIRNAME);
 		PathManager.WKDataLocation.Empty();
-		PathManager.CopyAll(profileWKData, PathManager.WKDataLocation);
+		await PathManager.CopyAllAsync(profileWKData, PathManager.WKDataLocation).ConfigureAwait(false);
 	}
-	public static void LoadProfileBepinExDataToBepinExFolder(this Profile profile)
+	public static async Task LoadProfileBepinExDataToBepinExFolder(this Profile profile)
 	{
 		if(profile is null)
 		{
@@ -36,20 +36,22 @@ internal static class ProfileExtensions
 		// Get profile bepinex data
 		GetOrCreateBepinExFolders(profile.ProfileLocation, out var toPluginsRoot, out var toPatchersRoot, out var toConfigRoot);
 		// Copy profile data to bepinex folders
-		PathManager.CopyAll(toPluginsRoot, _bepinExPluginsLocation);
-		PathManager.CopyAll(toPatchersRoot, _bepinExPatchersLocation);
-		PathManager.CopyAll(toConfigRoot, _bepinExConfigLocation);
+		var t1 = PathManager.CopyAllAsync(toPluginsRoot, _bepinExPluginsLocation);
+		var t2 = PathManager.CopyAllAsync(toPatchersRoot, _bepinExPatchersLocation);
+		var t3 = PathManager.CopyAllAsync(toConfigRoot, _bepinExConfigLocation);
+		await Task.WhenAll(t1, t2, t3).ConfigureAwait(false);
 	}
-	public static void SaveBepinExDataToProfile(this Profile profile)
+	public static async Task SaveBepinExDataToProfile(this Profile profile)
 	{
 		if(profile is null)
 		{
 			throw new ArgumentNullException(nameof(profile), "Profile cannot be null.");
 		}
 		GetOrCreateBepinExFolders(profile.ProfileLocation, out var toPluginsRoot, out var toPatchersRoot, out var toConfigRoot);
-		PathManager.CopyAll(_bepinExPluginsLocation, toPluginsRoot);
-		PathManager.CopyAll(_bepinExPatchersLocation, toPatchersRoot);
-		PathManager.CopyAll(_bepinExConfigLocation, toConfigRoot);
+		var t1 = PathManager.CopyAllAsync(_bepinExPluginsLocation, toPluginsRoot);
+		var t2 = PathManager.CopyAllAsync(_bepinExPatchersLocation, toPatchersRoot);
+		var t3 = PathManager.CopyAllAsync(_bepinExConfigLocation, toConfigRoot);
+		await Task.WhenAll(t1, t2, t3).ConfigureAwait(false);
 	}
 
 	private static void GetOrCreateBepinExFolders(DirectoryInfo root, out DirectoryInfo pluginsRoot, out DirectoryInfo patchersRoot, out DirectoryInfo configRoot)
